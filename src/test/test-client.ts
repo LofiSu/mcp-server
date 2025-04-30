@@ -1,71 +1,70 @@
-/**
- * MCP 客户端测试脚本
- * 用于测试 MCP 服务器是否正常工作
- */
-import { McpClient } from '@modelcontextprotocol/sdk/client/mcp';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { randomUUID } from 'crypto';
-import { infoLog, errorLog } from '../utils/log.js';
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { debugLog } from "../utils/log.js";
 
 /**
- * 测试 MCP 服务器
+ * 测试 MCP 客户端
+ * 此文件演示如何创建 MCP 客户端并与服务器进行交互
  */
-async function testMcpServer() {
+
+// 服务器地址
+const SERVER_URL = "http://localhost:3000/mcp";
+
+/**
+ * 创建并初始化 MCP 客户端
+ */
+async function createClient() {
+  // 创建传输层
+  const transport = new StreamableHTTPClientTransport(new URL(SERVER_URL));
+
+  // 创建客户端
+  const client = new Client({
+    name: "MCP Test Client",
+    version: "1.0.0"
+  });
+  
+  // 连接到传输层
+  await client.connect(transport);
+  debugLog("✅ 客户端已连接到服务器");
+
+  // 获取可用工具列表
+  const tools = await client.listTools();
+  debugLog("🔧 可用工具列表:", tools);
+
+  return { client, transport };
+}
+
+/**
+ * 执行工具调用示例
+ */
+async function runToolExample() {
+  const { client, transport } = await createClient();
+
   try {
-    // 服务器地址
-    const serverUrl = 'http://localhost:3000/mcp';
-    infoLog(`🔗 连接到 MCP 服务器: ${serverUrl}`);
-    
-    // 创建会话 ID
-    const sessionId = randomUUID();
-    infoLog(`🆔 会话 ID: ${sessionId}`);
-    
-    // 创建传输层
-    const transport = new StreamableHTTPClientTransport({
-      url: serverUrl,
-      sessionId: sessionId,
+    // 示例：使用导航工具
+    const navigateResult = await client.callTool({
+      name: "navigate",
+      params: { url: "https://https://github.com/LofiSu.com" }
     });
-    
-    // 创建客户端
-    const client = new McpClient();
-    
-    // 连接到服务器
-    await client.connect(transport);
-    infoLog('✅ 成功连接到服务器');
-    
-    // 初始化会话
-    const initResult = await client.initialize();
-    infoLog('✅ 会话初始化成功', initResult);
-    
-    // 获取可用工具列表
-    const tools = client.getTools();
-    infoLog(`🧰 可用工具列表 (${tools.length} 个):`, tools.map(t => t.name));
-    
-    // 测试调用工具 - 以 navigate 为例
-    if (tools.some(t => t.name === 'navigate')) {
-      infoLog('🔍 测试 navigate 工具...');
-      const navigateResult = await client.callTool('navigate', { url: 'https://example.com' });
-      infoLog('✅ navigate 工具调用成功', navigateResult);
-    }
-    
-    // 关闭会话
-    await client.close();
-    infoLog('👋 会话已关闭');
-    
-    return true;
+    debugLog("➡️ 导航结果:", navigateResult);
+
+    // 示例：使用快照工具
+    const snapshotResult = await client.callTool({
+      name: "snapshot",
+      params: {}
+    });
+    debugLog("📸 快照结果:", snapshotResult);
+
+    // 关闭连接
+    await transport.close();
+    debugLog("👋 连接已关闭");
   } catch (error) {
-    errorLog('❌ 测试失败', error);
-    return false;
+    debugLog("❌ 工具调用错误:", error);
+    await transport.close();
   }
 }
 
-// 执行测试
-testMcpServer().then(success => {
-  if (success) {
-    infoLog('🎉 MCP 服务器测试成功!');
-    process.exit(0);
-  } else {
-    errorLog('💔 MCP 服务器测试失败!');
-    process.exit(1);
-  }
+// 运行示例
+runToolExample().catch(error => {
+  debugLog("❌ 运行示例时出错:", error);
 });
