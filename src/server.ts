@@ -85,8 +85,7 @@ app.post("/mcp", async (req, res) => {
     // 复用现有传输实例
     transport = transports[sessionId];
     console.log(`✅ 使用现有会话: ${sessionId}`);
-    console.log(`🔍 会话状态验证: transports[${sessionId}] 存在 = ${Boolean(transports[sessionId])}`);
-    
+    console.log(`🔍 会话状态验证: transports[${sessionId}] 存在 = ${Boolean(transports[sessionId])}`);    
     // 确保响应头中包含会话ID
     res.setHeader("Mcp-Session-Id", sessionId);
     console.log(`📤 设置响应头会话ID: ${sessionId}`);
@@ -99,6 +98,7 @@ app.post("/mcp", async (req, res) => {
     res.setHeader("Mcp-Session-Id", newSessionId);
     console.log(`📤 设置响应头会话ID: ${newSessionId}`);
     
+    // 创建传输实例并立即存储，而不是等待回调
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => {
         console.log(`🔑 sessionIdGenerator被调用，返回: ${newSessionId}`);
@@ -107,12 +107,16 @@ app.post("/mcp", async (req, res) => {
       onsessioninitialized: (newId) => {
         console.log(`✅ 会话初始化成功: ${newId}`);
         console.log(`📊 transport.sessionId = ${transport.sessionId}`);
-        // 存储传输实例，以便后续请求使用
-        transports[newId] = transport;
+        // 确认会话已存储
+        console.log(`💾 会话存储状态检查: transports[${newId}] 存在 = ${Boolean(transports[newId])}`);
         console.log(`💾 已存储会话实例，当前会话数: ${Object.keys(transports).length}`);
         console.log(`💾 会话存储状态: ${JSON.stringify(Object.keys(transports))}`);
       }
     });
+
+    // 立即存储传输实例，不等待回调
+    transports[newSessionId] = transport;
+    console.log(`💾 预先存储会话实例: ${newSessionId}`);
 
     // 清理传输实例，当会话关闭时
     transport.onclose = () => {
