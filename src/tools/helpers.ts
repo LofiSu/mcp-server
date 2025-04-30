@@ -1,6 +1,6 @@
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { z } from "zod";
-import type { TextContent } from "@modelcontextprotocol/sdk/types.js";
+import type { TextContent, ImageContent } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolResult } from "../types/tools.js";
 
 /**
@@ -27,7 +27,7 @@ export const createTextResponse = (text: string): ToolResult => ({
 /**
  * 创建带快照的文本响应
  */
-export const createSnapshotResponse = (text: string, snapshotContent: TextContent[]): ToolResult => ({
+export const createSnapshotResponse = (text: string, snapshotContent: (TextContent | ImageContent)[]): ToolResult => ({
   content: [
     {
       type: "text",
