@@ -2,10 +2,10 @@ import express from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { randomUUID } from "crypto";
-import * as common from "./tools/common.js";
-import * as snapshot from "./tools/snapshot.js";
-import * as custom from "./tools/custom.js";
+import * as tools from "./tools/index.js";
 import { debugLog } from "./utils/log.js";
+import { Context } from "./types/context.js";
+import { Tool } from "./types/tools.js";
 
 // 创建 Express 应用
 const app = express();
@@ -24,6 +24,21 @@ function validateAcceptHeader(req: express.Request): boolean {
   return (
     acceptHeader.includes("application/json") &&
     acceptHeader.includes("text/event-stream")
+  );
+}
+
+/**
+ * 工具注册辅助函数
+ * 简化工具注册过程，减少重复代码
+ */
+function registerTool(server: McpServer, tool: Tool, context: Context) {
+  server.tool(
+    tool.schema.name,
+    tool.schema.description,
+    async (params) => {
+      debugLog(`➡️ 执行工具: ${tool.schema.name}`, params);
+      return await tool.handle(context, params);
+    }
   );
 }
 
@@ -53,128 +68,34 @@ function createServer() {
     async executeBrowserAction(action: string, params: any) {
       return this.sendSocketMessage(`browser_${action}`, params);
     },
-  } as any;
+  } as Context;
 
-  // 工具注册 - 按照 MCP 协议标准方式注册工具
-  // 导航工具
-  server.tool(
-    common.navigate(true).schema.name,
-    common.navigate(true).schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: navigate`, params);
-      return await common.navigate(true).handle(context, params);
-    }
-  );
+  // 定义所有需要注册的工具
+  const allTools = [
+    // 导航类工具
+    tools.navigate,
+    tools.goBack,
+    tools.goForward,
+    tools.wait,
+    tools.pressKey,
+    
+    // 交互类工具
+    tools.click,
+    tools.drag,
+    tools.hover,
+    tools.type,
+    tools.selectOption,
+    
+    // 快照类工具
+    tools.snapshot,
+    
+    // 实用工具类
+    tools.getConsoleLogs,
+    tools.screenshot
+  ];
 
-  // 后退工具
-  server.tool(
-    common.goBack(true).schema.name,
-    common.goBack(true).schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: goBack`, params);
-      return await common.goBack(true).handle(context, params);
-    }
-  );
-
-  // 前进工具
-  server.tool(
-    common.goForward(true).schema.name,
-    common.goForward(true).schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: goForward`, params);
-      return await common.goForward(true).handle(context, params);
-    }
-  );
-
-  // 快照工具
-  server.tool(
-    snapshot.snapshot.schema.name,
-    snapshot.snapshot.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: snapshot`, params);
-      return await snapshot.snapshot.handle(context, params);
-    }
-  );
-
-  // 点击工具
-  server.tool(
-    snapshot.click.schema.name,
-    snapshot.click.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: click`, params);
-      return await snapshot.click.handle(context, params);
-    }
-  );
-
-  // 悬停工具
-  server.tool(
-    snapshot.hover.schema.name,
-    snapshot.hover.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: hover`, params);
-      return await snapshot.hover.handle(context, params);
-    }
-  );
-
-  // 输入工具
-  server.tool(
-    snapshot.type.schema.name,
-    snapshot.type.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: type`, params);
-      return await snapshot.type.handle(context, params);
-    }
-  );
-
-  // 选择选项工具
-  server.tool(
-    snapshot.selectOption.schema.name,
-    snapshot.selectOption.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: selectOption`, params);
-      return await snapshot.selectOption.handle(context, params);
-    }
-  );
-
-  // 按键工具
-  server.tool(
-    common.pressKey.schema.name,
-    common.pressKey.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: pressKey`, params);
-      return await common.pressKey.handle(context, params);
-    }
-  );
-
-  // 等待工具
-  server.tool(
-    common.wait.schema.name,
-    common.wait.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: wait`, params);
-      return await common.wait.handle(context, params);
-    }
-  );
-
-  // 获取控制台日志工具
-  server.tool(
-    custom.getConsoleLogs.schema.name,
-    custom.getConsoleLogs.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: getConsoleLogs`, params);
-      return await custom.getConsoleLogs.handle(context, params);
-    }
-  );
-
-  // 截图工具
-  server.tool(
-    custom.screenshot.schema.name,
-    custom.screenshot.schema.description,
-    async (params) => {
-      debugLog(`➡️ 执行工具: screenshot`, params);
-      return await custom.screenshot.handle(context, params);
-    }
-  );
+  // 批量注册所有工具
+  allTools.forEach(tool => registerTool(server, tool, context));
 
   return server;
 }

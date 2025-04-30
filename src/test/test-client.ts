@@ -44,7 +44,7 @@ async function runToolExample() {
     // 示例：使用导航工具
     const navigateResult = await client.callTool({
       name: "navigate",
-      params: { url: "https://https://github.com/LofiSu.com" }
+      params: { url: "https://github.com/LofiSu" }
     });
     debugLog("➡️ 导航结果:", navigateResult);
 
