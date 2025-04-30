@@ -70,34 +70,41 @@ const createServer = () => {
 
 // POST /mcp - 处理 JSON-RPC 请求
 app.post("/mcp", async (req, res) => {
+  // 检查现有会话ID
   const sessionId = req.headers["mcp-session-id"] as string | undefined;
   const method = req.body?.method;
+  const isInitialize = method === "initialize";
   console.log(`📩 收到方法: ${method}，Session: ${sessionId}`);
 
   let transport: StreamableHTTPServerTransport;
 
   if (sessionId && transports[sessionId]) {
+    // 复用现有传输实例
     transport = transports[sessionId];
     console.log(`✅ 使用现有会话: ${sessionId}`);
-  } else {
-    // 创建新的传输实例
+    
+    // 确保响应头中包含会话ID
+    res.setHeader("Mcp-Session-Id", sessionId);
+    console.log(`📤 设置响应头会话ID: ${sessionId}`);
+  } else if (!sessionId && isInitialize) {
+    // 新的初始化请求
     const newSessionId = randomUUID();
     console.log(`🆕 生成新会话ID: ${newSessionId}`);
+    
+    // 在响应头中设置会话ID - 必须在handleRequest之前设置
+    res.setHeader("Mcp-Session-Id", newSessionId);
+    console.log(`📤 设置响应头会话ID: ${newSessionId}`);
     
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => newSessionId,
       onsessioninitialized: (newId) => {
         console.log("✅ 会话初始化成功:", newId);
+        // 存储传输实例，以便后续请求使用
         transports[newId] = transport;
-        
-        // 确保响应头中包含会话ID
-        if (method === "initialize" && !res.headersSent) {
-          res.setHeader("Mcp-Session-Id", newId);
-          console.log(`📤 设置响应头会话ID: ${newId}`);
-        }
-      },
+      }
     });
 
+    // 清理传输实例，当会话关闭时
     transport.onclose = () => {
       if (transport.sessionId) {
         console.log("❌ 会话关闭:", transport.sessionId);
@@ -107,44 +114,88 @@ app.post("/mcp", async (req, res) => {
 
     const server = createServer();
     await server.connect(transport);
+  } else {
+    // 无效请求 - 没有会话ID或不是初始化请求
+    res.status(400).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Bad Request: Server not initialized',
+      },
+      id: null,
+    });
+    return;
   }
 
-  // 在处理请求前确保会话ID已设置到响应头中
-  if (transport.sessionId && !res.headersSent) {
-    res.setHeader("Mcp-Session-Id", transport.sessionId);
-    console.log(`📤 处理请求前设置响应头会话ID: ${transport.sessionId}`);
-  }
-
-  await transport.handleRequest(req, res, req.body);
-  
-  // 在处理请求后再次确认会话ID是否已设置
-  if (transport.sessionId && !res.headersSent) {
-    res.setHeader("Mcp-Session-Id", transport.sessionId);
-    console.log(`📤 处理请求后设置响应头会话ID: ${transport.sessionId}`);
+  try {
+    // 处理请求前确保Content-Type正确设置
+    if (!res.getHeader('Content-Type')) {
+      res.setHeader('Content-Type', 'application/json');
+    }
+    
+    // 处理请求
+    await transport.handleRequest(req, res, req.body);
+  } catch (error) {
+    console.error('Error handling MCP request:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32603,
+          message: 'Internal server error',
+        },
+        id: null,
+      });
+    }
   }
 });
+
+// 可重用的会话请求处理函数
+const handleSessionRequest = async (req: express.Request, res: express.Response) => {
+  const sessionId = req.headers["mcp-session-id"] as string | undefined;
+  if (!sessionId || !transports[sessionId]) {
+    res.status(400).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32000,
+        message: 'Invalid or missing session ID',
+      },
+      id: null,
+    });
+    return;
+  }
+  
+  // 在响应头中设置会话ID - 必须在handleRequest之前设置
+  res.setHeader("Mcp-Session-Id", sessionId);
+  // 确保Content-Type正确设置
+  if (!res.getHeader('Content-Type')) {
+    res.setHeader('Content-Type', 'application/json');
+  }
+  console.log(`📤 设置响应头会话ID: ${sessionId}`);
+  
+  try {
+    const transport = transports[sessionId];
+    await transport.handleRequest(req, res);
+  } catch (error) {
+    console.error('Error handling session request:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        jsonrpc: '2.0',
+        error: {
+          code: -32603,
+          message: 'Internal server error',
+        },
+        id: null,
+      });
+    }
+  }
+};
 
 // GET /mcp - 客户端从服务端获取事件流
-app.get("/mcp", async (req, res) => {
-  const sessionId = req.headers["mcp-session-id"] as string;
-  if (!sessionId || !transports[sessionId]) {
-    return res.status(400).send("Invalid or missing session ID");
-  }
-
-  const transport = transports[sessionId];
-  await transport.handleRequest(req, res);
-});
+app.get("/mcp", handleSessionRequest);
 
 // DELETE /mcp - 主动关闭会话
-app.delete("/mcp", async (req, res) => {
-  const sessionId = req.headers["mcp-session-id"] as string;
-  if (!sessionId || !transports[sessionId]) {
-    return res.status(400).send("Invalid or missing session ID");
-  }
-
-  const transport = transports[sessionId];
-  await transport.handleRequest(req, res);
-});
+app.delete("/mcp", handleSessionRequest);
 
 // 启动服务器
 const PORT = 3000;
