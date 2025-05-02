@@ -6,6 +6,9 @@ import * as tools from "./tools/index.js";
 import { debugLog } from "./utils/log.js";
 import { Context } from "./types/context.js";
 import { Tool } from "./types/tools.js";
+import { browserConnector } from "./utils/browser-connector.js";
+import { browserAutomation } from "./utils/browser-automation.js";
+import { mcpContext } from "./utils/mcp-context.js";
 
 // 创建 Express 应用
 const app = express();
@@ -28,8 +31,7 @@ function validateAcceptHeader(req: express.Request): boolean {
 }
 
 /**
- * 工具注册辅助函数
- * 简化工具注册过程，减少重复代码
+ * 工具注册
  */
 function registerTool(server: McpServer, tool: Tool, context: Context) {
   server.tool(
@@ -54,39 +56,40 @@ function createServer() {
 
   // 创建 context 对象
   const context = {
-    socket: null as any,
+    // 使用mcpContext提供的sendSocketMessage方法
     async sendSocketMessage(type: string, payload: any) {
-      debugLog(`📤 发送 socket 消息: ${type}`, payload);
-      return Promise.resolve();
+      return mcpContext.sendSocketMessage(type, payload);
     },
     async wait(ms: number) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     },
     async getBrowserState() {
-      return {};
+      // 获取浏览器状态
+      const url = await mcpContext.sendSocketMessage("getUrl", undefined);
+      const title = await mcpContext.sendSocketMessage("getTitle", undefined);
+      return { url, title };
     },
     async executeBrowserAction(action: string, params: any) {
       return this.sendSocketMessage(`browser_${action}`, params);
     },
   } as Context;
 
-  // 定义所有需要注册的工具
   const allTools = [
-    // 导航类工具
+    // 导航类
     tools.navigate,
     tools.goBack,
     tools.goForward,
     tools.wait,
     tools.pressKey,
     
-    // 交互类工具
+    // 交互类
     tools.click,
     tools.drag,
     tools.hover,
     tools.type,
     tools.selectOption,
     
-    // 快照类工具
+    // 快照类
     tools.snapshot,
     
     // 实用工具类
@@ -250,8 +253,35 @@ app.get("/mcp", handleSessionRequest);
 // DELETE /mcp - 主动关闭会话
 app.delete("/mcp", handleSessionRequest);
 
-// 启动服务器
-const PORT = 3000;
-app.listen(PORT, () => {
-  debugLog(`🚀 MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
+// 启动WebSocket服务器和浏览器
+async function startBrowserAndServer() {
+  try {
+    // 启动WebSocket服务器
+    const WS_PORT = 8080;
+    await browserConnector.initialize(WS_PORT);
+    
+    // 启动浏览器并连接到WebSocket服务器
+    await browserAutomation.initialize(WS_PORT);
+    
+    // 启动HTTP服务器
+    const PORT = 3000;
+    app.listen(PORT, () => {
+      debugLog(`🚀 MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
+      debugLog(`💻 浏览器已连接，可以开始测试MCP客户端`);
+    });
+  } catch (error) {
+    debugLog(`❌ 启动服务器时出错:`, error);
+    process.exit(1);
+  }
+}
+
+// 处理进程退出
+process.on('SIGINT', async () => {
+  debugLog('👋 正在关闭服务器...');
+  await browserAutomation.close();
+  browserConnector.close();
+  process.exit(0);
 });
+
+// 启动服务器
+startBrowserAndServer();
