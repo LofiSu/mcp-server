@@ -5,7 +5,8 @@
   "scripts": {
     "start": "pnpm build && node dist/server.js",
     "dev": "tsx watch src/server.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "tsx src/test/test-client.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.9.0",

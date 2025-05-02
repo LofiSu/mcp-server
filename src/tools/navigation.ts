@@ -22,7 +22,7 @@ export const navigate: Tool = {
   handle: async (context: Context, params?: Record<string, any>) => {
     try {
       // 添加默认参数用于测试
-      const defaultParams = { url: "https://github.com/LofiSu" };
+      const defaultParams = { url: "https://www.bilibili.com" };
       const mergedParams = { ...defaultParams, ...(params || {}) };
       const validatedParams = validateToolParams(NavigateTool.shape.argsSchema, mergedParams);
       

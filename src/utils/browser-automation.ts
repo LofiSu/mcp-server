@@ -19,12 +19,13 @@ export class BrowserAutomation {
    */
   async initialize(wsPort: number = 8080): Promise<void> {
     try {
-      // 动态导入Playwright (需要先安装)
-      const { chromium } = await import('playwright');
+      // 动态导入Playwright 库
+      const { chromium, firefox, webkit, devices } = await import('playwright');
       
-      // 启动浏览器
+      // 启动浏览器 - 使用Edge浏览器
       this.browser = await chromium.launch({
         headless: false, // 设置为true可隐藏浏览器界面
+        channel: 'msedge', // 使用Microsoft Edge浏览器
       });
       
       // 创建新页面
@@ -141,10 +142,10 @@ export class BrowserAutomation {
         `
       });
       
-      // 导航到初始页面
-      await this.page.goto('about:blank');
+      // 导航到初始页面 - 使用bilibili官网
+      await this.page.goto('https://www.bilibili.com');
       
-      debugLog('🚀 浏览器已启动并连接到WebSocket服务器');
+      debugLog('🚀 Edge浏览器已启动并连接到WebSocket服务器');
     } catch (error) {
       debugLog('❌ 启动浏览器时出错:', error);
       throw error;
