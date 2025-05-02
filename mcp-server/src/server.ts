@@ -7,6 +7,7 @@ import { debugLog } from "./utils/log.js";
 import { Context } from "./types/context.js";
 import { Tool } from "./types/tools.js";
 import { mcpContext } from "./utils/mcp-context.js";
+import fetch from 'node-fetch'; // 需要引入 node-fetch 用于后端发送 HTTP 请求
 
 // 创建 Express 应用
 const app = express();
@@ -257,11 +258,146 @@ app.get("/mcp", handleSessionRequest);
 // DELETE /mcp - 主动关闭会话
 app.delete("/mcp", handleSessionRequest);
 
+// 新增 API 端点处理前端指令
+app.post('/api/ai-command', async (req, res) => {
+  const { command, apiKey, sessionId } = req.body;
+
+  console.log(`[API /api/ai-command] Received command: "${command}", Session ID: ${sessionId}`);
+
+  // --- 输入验证 ---
+  if (!command || typeof command !== 'string') {
+    console.error('[API /api/ai-command] Error: Missing or invalid command');
+    return res.status(400).json({ error: 'Missing or invalid command' });
+  }
+  // 实际应用中应验证 apiKey
+  // if (!apiKey) {
+  //   return res.status(401).json({ error: 'Missing API Key' });
+  // }
+  if (!sessionId || typeof sessionId !== 'string') {
+    console.error('[API /api/ai-command] Error: Missing or invalid sessionId');
+    return res.status(400).json({ error: 'Missing or invalid sessionId' });
+  }
+
+  // --- 会话验证 ---
+  // 检查会话是否存在 (在实际应用中，需要更完善的会话管理)
+  // 这里我们假设 sessionId 总是有效的，因为前端会初始化
+  // if (!isValidSession(sessionId)) { // 需要实现 isValidSession
+  //   return res.status(404).json({ error: 'Session not found or invalid' });
+  // }
+
+  // --- 模拟 AI 处理 --- (替换为实际的 AI 调用)
+  let mcpRequestPayload: any;
+  try {
+    console.log(`[API /api/ai-command] Simulating AI processing for command: "${command}"`);
+    // 简单的基于关键词的模拟 AI 响应
+    const lowerCaseCommand = command.toLowerCase();
+
+    if (lowerCaseCommand.includes('bilibili') && lowerCaseCommand.includes('搜索框') && lowerCaseCommand.includes('输入')) {
+      const searchTextMatch = command.match(/输入\s*(.+)/i);
+      const searchText = searchTextMatch ? searchTextMatch[1].trim() : 'Trae AI'; // 默认搜索词
+      mcpRequestPayload = {
+        tool: 'typeText',
+        args: {
+          selector: '#nav-search-input', // Bilibili 搜索框选择器
+          text: searchText,
+          options: { delay: 50 } // 模拟打字延迟
+        }
+      };
+      console.log(`[API /api/ai-command] AI Simulation: Generated 'typeText' for Bilibili search input: "${searchText}"`);
+    } else if (lowerCaseCommand.includes('导航到') || lowerCaseCommand.includes('打开')) {
+        let urlMatch = command.match(new RegExp('https:\/\/\S+', 'i'));
+        let targetUrl = 'https://www.google.com'; // Default URL
+
+        if (!urlMatch) { // If full URL not found, try matching "打开 ..."
+            urlMatch = command.match(new RegExp('打开\\s+([^\\s]+)', 'i'));
+        }
+
+        if (urlMatch && urlMatch[1]) {
+            targetUrl = urlMatch[1].startsWith('http') ? urlMatch[1] : `https://${urlMatch[1]}`;
+        } else if (lowerCaseCommand.includes('bilibili')) {
+            targetUrl = 'https://www.bilibili.com';
+        }
+        mcpRequestPayload = {
+            tool: 'navigate',
+            args: { url: targetUrl }
+        };
+        console.log(`[API /api/ai-command] AI Simulation: Generated 'navigate' to URL: ${targetUrl}`);
+    } else if (lowerCaseCommand.includes('点击') || lowerCaseCommand.includes('单击')) {
+        // 非常简化的点击模拟，假设用户指定了选择器或明确文本
+        const selectorMatch = command.match(/(选择器|selector)\s*['"]([^'"]+)['"]/i);
+        const textMatch = command.match(/文本为?['"]([^'"]+)['"]/i);
+        let selector = 'button'; // Default selector
+        if (selectorMatch && selectorMatch[2]) {
+            selector = selectorMatch[2];
+        } else if (textMatch && textMatch[1]) {
+            // 尝试生成基于文本的选择器 (非常基础)
+            selector = `button:contains("${textMatch[1]}"), a:contains("${textMatch[1]}")`; // 示例
+        }
+        mcpRequestPayload = {
+            tool: 'click',
+            args: { selector: selector }
+        };
+        console.log(`[API /api/ai-command] AI Simulation: Generated 'click' on selector: ${selector}`);
+
+    } else if (lowerCaseCommand.includes('快照') || lowerCaseCommand.includes('截图') || lowerCaseCommand.includes('页面状态')) {
+      mcpRequestPayload = {
+        tool: 'snapshot', // 假设我们有一个 'snapshot' 工具
+        args: {} // 可能不需要参数，或者可以指定截图区域等
+      };
+      console.log(`[API /api/ai-command] AI Simulation: Generated 'snapshot' request`);
+    } else {
+      // 默认或无法识别的指令，可以返回一个提示或默认操作
+      console.log(`[API /api/ai-command] AI Simulation: Command not recognized, generating default 'getConsoleLogs'`);
+      mcpRequestPayload = {
+        tool: 'getConsoleLogs',
+        args: {}
+      };
+    }
+
+    // --- 发送 MCP 请求到 /mcp 端点 ---
+    if (mcpRequestPayload) {
+      const mcpUrl = `http://localhost:${PORT}/mcp`; // MCP 服务器在本机
+      console.log(`[API /api/ai-command] Sending MCP request to ${mcpUrl} with payload:`, mcpRequestPayload);
+
+      // 使用 node-fetch 发送 POST 请求
+      const mcpResponse = await fetch(mcpUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-MCP-Session-ID': sessionId // 将会话 ID 传递给 MCP 服务器
+        },
+        body: JSON.stringify(mcpRequestPayload)
+      });
+
+      if (!mcpResponse.ok) {
+        const errorText = await mcpResponse.text();
+        console.error(`[API /api/ai-command] Error sending MCP request: ${mcpResponse.status} ${mcpResponse.statusText}`, errorText);
+        throw new Error(`MCP request failed: ${mcpResponse.status} ${mcpResponse.statusText}`);
+      }
+
+      // MCP 响应通常是流式的，这里我们只确认请求已发送
+      // 实际结果会通过 EventSource 推送给前端
+      console.log(`[API /api/ai-command] MCP request sent successfully to session ${sessionId}`);
+      res.status(200).json({ message: 'Command received and forwarded to MCP' });
+
+    } else {
+      console.log('[API /api/ai-command] No MCP payload generated for the command.');
+      res.status(200).json({ message: 'Command received, but no action taken by AI simulation.' });
+    }
+
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown AI processing error';
+    console.error(`[API /api/ai-command] Error processing command: ${errorMsg}`, error);
+    res.status(500).json({ error: `Failed to process command: ${errorMsg}` });
+  }
+});
+
 // 启动HTTP服务器（不再自动启动浏览器和WebSocket，由插件负责连接）
 const PORT = 3000;
 app.listen(PORT, () => {
   debugLog(`🚀 MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
-  debugLog(`🔌 等待浏览器插件连接... AI可通过MCP协议调用工具，由插件负责实际页面操作`);
+  debugLog(`🔗 API Endpoint for AI commands available at POST /api/ai-command`);
+  debugLog(`🔌 等待浏览器插件连接 WebSocket at ws://localhost:8081 ...`);
 });
 
 // 移除进程退出时关闭浏览器的逻辑
