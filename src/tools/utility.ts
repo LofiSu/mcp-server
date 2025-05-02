@@ -17,8 +17,9 @@ export const getConsoleLogs: Tool = {
     try {
       // 使用参数或默认值
       const options = params || {};
+      // 注意：这里假设插件 API 需要一个 'getConsoleLogs' 类型的消息
       const consoleLogs = await context.sendSocketMessage(
-        "browser_get_console_logs",
+        "getConsoleLogs",
         options,
       );
       interface ConsoleLog {
@@ -44,8 +45,9 @@ export const screenshot: Tool = {
     try {
       // 使用参数或默认值
       const options = params || {};
+      // 注意：这里假设插件 API 需要一个 'screenshot' 类型的消息
       const screenshot = await context.sendSocketMessage(
-        "browser_screenshot",
+        "screenshot",
         options,
       );
       return {

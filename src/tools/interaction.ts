@@ -21,7 +21,8 @@ export const click: Tool = {
   handle: async (context: Context, params?: Record<string, any>) => {
     try {
       const validatedParams = validateToolParams(ClickTool.shape.argsSchema, params);
-      await context.sendSocketMessage("browser_click", validatedParams);
+      // 注意：这里假设插件 API 需要一个 'click' 类型的消息
+      await context.sendSocketMessage("click", validatedParams);
       const snapshot = await captureAriaSnapshot(context);
       return createSnapshotResponse(`点击了 "${validatedParams.selector}"`, snapshot.content);
     } catch (error) {
@@ -36,7 +37,8 @@ export const drag: Tool = {
   handle: async (context: Context, params?: Record<string, any>) => {
     try {
       const validatedParams = validateToolParams(DragTool.shape.argsSchema, params);
-      await context.sendSocketMessage("browser_drag", validatedParams);
+      // 注意：这里假设插件 API 需要一个 'drag' 类型的消息
+      await context.sendSocketMessage("drag", validatedParams);
       const snapshot = await captureAriaSnapshot(context);
       return createSnapshotResponse(
         `将 "${validatedParams.sourceSelector}" 拖拽到 "${validatedParams.targetSelector}"`, 
@@ -54,7 +56,8 @@ export const hover: Tool = {
   handle: async (context: Context, params?: Record<string, any>) => {
     try {
       const validatedParams = validateToolParams(HoverTool.shape.argsSchema, params);
-      await context.sendSocketMessage("browser_hover", validatedParams);
+      // 注意：这里假设插件 API 需要一个 'hover' 类型的消息
+      await context.sendSocketMessage("hover", validatedParams);
       const snapshot = await captureAriaSnapshot(context);
       return createSnapshotResponse(`悬停在 "${validatedParams.selector}" 上`, snapshot.content);
     } catch (error) {
@@ -69,7 +72,8 @@ export const type: Tool = {
   handle: async (context: Context, params?: Record<string, any>) => {
     try {
       const validatedParams = validateToolParams(TypeTool.shape.argsSchema, params);
-      await context.sendSocketMessage("browser_type", validatedParams);
+      // 注意：这里假设插件 API 需要一个 'type' 类型的消息
+      await context.sendSocketMessage("type", validatedParams);
       const snapshot = await captureAriaSnapshot(context);
       return createSnapshotResponse(
         `在 "${validatedParams.selector}" 中输入了 "${validatedParams.text}"`, 
@@ -87,7 +91,8 @@ export const selectOption: Tool = {
   handle: async (context: Context, params?: Record<string, any>) => {
     try {
       const validatedParams = validateToolParams(SelectOptionTool.shape.argsSchema, params);
-      await context.sendSocketMessage("browser_select_option", validatedParams);
+      // 注意：这里假设插件 API 需要一个 'selectOption' 类型的消息
+      await context.sendSocketMessage("selectOption", validatedParams);
       const snapshot = await captureAriaSnapshot(context);
       return createSnapshotResponse(`在 "${validatedParams.selector}" 中选择了选项`, snapshot.content);
     } catch (error) {
