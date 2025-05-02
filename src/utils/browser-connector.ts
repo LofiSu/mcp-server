@@ -17,21 +17,36 @@ export class BrowserConnector {
   private ws: WebSocketServer | null = null;
   private browserConnection: WebSocket.WebSocket | null = null;
   private messageHandlers: Map<string, (data: any) => any> = new Map();
+  private reconnectAttempts: number = 0;
+  private maxReconnectAttempts: number = 5;
+  private reconnectInterval: number = 3000; // 3秒重连间隔
+  private reconnecting: boolean = false;
+  private port: number = 8080;
 
   /**
    * 初始化WebSocket服务器
    * @param port WebSocket服务器端口
    */
   async initialize(port: number = 8080): Promise<void> {
+    this.port = port;
+    await this.startServer();
+  }
+
+  /**
+   * 启动WebSocket服务器
+   */
+  private async startServer(): Promise<void> {
     // 创建WebSocket服务器
-    this.ws = new WebSocketServer({ port });
+    this.ws = new WebSocketServer({ port: this.port });
     
-    debugLog(`🔌 WebSocket服务器已启动，监听端口 ${port}`);
+    debugLog(`🔌 WebSocket服务器已启动，监听端口 ${this.port}`);
     
     // 监听连接事件
     this.ws.on('connection', (socket: WebSocket.WebSocket) => {
       debugLog('✅ 浏览器已连接');
       this.browserConnection = socket;
+      this.reconnectAttempts = 0; // 重置重连计数
+      this.reconnecting = false;
       
       // 监听消息事件
       socket.on('message', async (message: WebSocket.Data) => {
@@ -55,8 +70,68 @@ export class BrowserConnector {
       socket.on('close', () => {
         debugLog('❌ 浏览器已断开连接');
         this.browserConnection = null;
+        
+        // 尝试自动重连
+        this.attemptReconnect();
+      });
+
+      // 监听错误事件
+      socket.on('error', (error) => {
+        debugLog('❌ WebSocket连接错误:', error);
+        // 错误发生时不需要手动关闭连接，close事件会被触发
       });
     });
+
+    // 监听服务器错误
+    this.ws.on('error', (error) => {
+      debugLog('❌ WebSocket服务器错误:', error);
+    });
+  }
+
+  /**
+   * 尝试重新连接
+   */
+  private attemptReconnect(): void {
+    // 如果已经在重连过程中，则不再启动新的重连
+    if (this.reconnecting) return;
+    
+    this.reconnecting = true;
+    debugLog(`🔄 尝试重新连接浏览器 (${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+    
+    // 如果超过最大重试次数，则停止重连
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      debugLog('❌ 达到最大重连次数，停止重连');
+      this.reconnecting = false;
+      return;
+    }
+    
+    // 增加重连计数
+    this.reconnectAttempts++;
+    
+    // 延迟一段时间后重连
+    setTimeout(() => {
+      // 如果已经重新连接，则不需要再次重连
+      if (this.browserConnection) {
+        this.reconnecting = false;
+        return;
+      }
+      
+      // 重启服务器
+      if (this.ws) {
+        this.ws.close(() => {
+          debugLog('🔄 关闭旧的WebSocket服务器，准备重启');
+          this.startServer().catch(error => {
+            debugLog('❌ 重启WebSocket服务器失败:', error);
+            this.reconnecting = false;
+          });
+        });
+      } else {
+        this.startServer().catch(error => {
+          debugLog('❌ 重启WebSocket服务器失败:', error);
+          this.reconnecting = false;
+        });
+      }
+    }, this.reconnectInterval);
   }
 
   /**

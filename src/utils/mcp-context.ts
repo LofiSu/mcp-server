@@ -29,6 +29,16 @@ export class McpContext {
       return undefined;
     }
   }
+
+  /**
+   * 获取浏览器状态
+   * @returns 浏览器状态对象
+   */
+  async getBrowserState(): Promise<{ connected: boolean }> {
+    return {
+      connected: browserConnector.isConnected()
+    };
+  }
 }
 
 // 创建单例实例
