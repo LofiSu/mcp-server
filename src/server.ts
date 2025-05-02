@@ -6,8 +6,6 @@ import * as tools from "./tools/index.js";
 import { debugLog } from "./utils/log.js";
 import { Context } from "./types/context.js";
 import { Tool } from "./types/tools.js";
-import { browserConnector } from "./utils/browser-connector.js";
-import { browserAutomation } from "./utils/browser-automation.js";
 import { mcpContext } from "./utils/mcp-context.js";
 
 // 创建 Express 应用
@@ -17,22 +15,14 @@ app.use(express.json());
 // 存储会话传输实例
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 
-/**
- * 验证请求头中的 Accept 头部是否符合 MCP 协议要求
- * MCP 协议要求 POST 请求必须同时接受 application/json 和 text/event-stream
- */
 function validateAcceptHeader(req: express.Request): boolean {
   const acceptHeader = req.headers.accept || "";
-  // 检查是否同时包含 application/json 和 text/event-stream
   return (
     acceptHeader.includes("application/json") &&
     acceptHeader.includes("text/event-stream")
   );
 }
 
-/**
- * 工具注册
- */
 function registerTool(server: McpServer, tool: Tool, context: Context) {
   server.tool(
     tool.schema.name,
@@ -44,27 +34,23 @@ function registerTool(server: McpServer, tool: Tool, context: Context) {
   );
 }
 
-/**
- * 创建 MCP Server 实例
- * 注册所有工具并返回服务器实例
- */
 function createServer() {
   const server = new McpServer({
-    name: "Browser MCP",
+    name: "In Browser MCP",
     version: "1.0.0",
   });
 
-  // 创建 context 对象
+  // context 通过插件API通信
   const context = {
-    // 使用mcpContext提供的sendSocketMessage方法
     async sendSocketMessage(type: string, payload: any) {
+      // 通过插件API（WebSocket/HTTP）发送消息
       return mcpContext.sendSocketMessage(type, payload);
     },
     async wait(ms: number) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     },
     async getBrowserState() {
-      // 获取浏览器状态
+      // 通过插件API获取当前页面状态
       const url = await mcpContext.sendSocketMessage("getUrl", undefined);
       const title = await mcpContext.sendSocketMessage("getTitle", undefined);
       return { url, title };
@@ -75,44 +61,30 @@ function createServer() {
   } as Context;
 
   const allTools = [
-    // 导航类
     tools.navigate,
     tools.goBack,
     tools.goForward,
     tools.wait,
     tools.pressKey,
-    
-    // 交互类
     tools.click,
     tools.drag,
     tools.hover,
     tools.type,
     tools.selectOption,
-    
-    // 快照类
     tools.snapshot,
-    
-    // 实用工具类
     tools.getConsoleLogs,
     tools.screenshot
   ];
 
-  // 批量注册所有工具
   allTools.forEach(tool => registerTool(server, tool, context));
-
   return server;
 }
 
-// POST /mcp - 处理 JSON-RPC 请求
 app.post("/mcp", async (req, res) => {
-  // 获取会话ID (不区分大小写)
   const sessionId = req.headers["mcp-session-id"] as string;
   const method = req.body?.method;
   const isInitialize = method === "initialize";
-  
-  debugLog(`📩 收到方法: ${method}，Session: ${sessionId || "无"}`); 
-
-  // 验证 Accept 头部
+  debugLog(`📩 收到方法: ${method}，Session: ${sessionId || "无"}`);
   if (!validateAcceptHeader(req)) {
     debugLog(`❌ 无效的 Accept 头部: ${req.headers.accept}`);
     return res.status(406).json({
@@ -124,49 +96,32 @@ app.post("/mcp", async (req, res) => {
       id: null,
     });
   }
-
   let transport: StreamableHTTPServerTransport;
-
-  // 处理现有会话
   if (sessionId && transports[sessionId]) {
     transport = transports[sessionId];
     debugLog(`✅ 使用现有会话: ${sessionId}`);
     res.setHeader("Mcp-Session-Id", sessionId);
-  } 
-  // 处理新的初始化请求
-  else if (!sessionId && isInitialize) {
+  } else if (!sessionId && isInitialize) {
     const newSessionId = randomUUID();
     debugLog(`🆕 创建新会话: ${newSessionId}`);
-    
-    // 设置会话ID响应头
     res.setHeader("Mcp-Session-Id", newSessionId);
-    
-    // 创建传输实例
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => newSessionId,
       onsessioninitialized: (id) => {
         debugLog(`✅ 会话初始化成功: ${id}`);
       }
     });
-
-    // 存储传输实例
     transports[newSessionId] = transport;
-    
-    // 设置会话关闭处理
     transport.onclose = () => {
       if (transport.sessionId) {
         debugLog(`❌ 会话关闭: ${transport.sessionId}`);
         delete transports[transport.sessionId];
       }
     };
-
-    // 创建并连接服务器
     const server = createServer();
     await server.connect(transport);
     debugLog(`🔌 服务器已连接到传输层`);
-  } 
-  // 处理无效请求
-  else {
+  } else {
     debugLog(`❌ 无效请求: sessionId=${sessionId || "无"}, isInitialize=${isInitialize}`);
     return res.status(400).json({
       jsonrpc: "2.0",
@@ -177,9 +132,7 @@ app.post("/mcp", async (req, res) => {
       id: null,
     });
   }
-
   try {
-    // 处理请求
     await transport.handleRequest(req, res, req.body);
   } catch (error) {
     debugLog("Error handling MCP request:", error);
@@ -196,11 +149,8 @@ app.post("/mcp", async (req, res) => {
   }
 });
 
-// 处理 GET 和 DELETE 请求的通用函数
 const handleSessionRequest = async (req: express.Request, res: express.Response) => {
   const sessionId = req.headers["mcp-session-id"] as string;
-  
-  // 验证会话ID
   if (!sessionId || !transports[sessionId]) {
     debugLog(`❌ 无效会话请求: sessionId=${sessionId || "无"}`);
     return res.status(400).json({
@@ -212,8 +162,6 @@ const handleSessionRequest = async (req: express.Request, res: express.Response)
       id: null,
     });
   }
-  
-  // 验证 Accept 头部 (仅对 GET 请求)
   if (req.method === "GET" && !req.headers.accept?.includes("text/event-stream")) {
     debugLog(`❌ GET 请求缺少有效的 Accept 头部: ${req.headers.accept}`);
     return res.status(406).json({
@@ -225,10 +173,8 @@ const handleSessionRequest = async (req: express.Request, res: express.Response)
       id: null,
     });
   }
-  
   debugLog(`✅ 会话请求验证通过: ${sessionId}`);
   res.setHeader("Mcp-Session-Id", sessionId);
-  
   try {
     const transport = transports[sessionId];
     await transport.handleRequest(req, res);
@@ -247,41 +193,12 @@ const handleSessionRequest = async (req: express.Request, res: express.Response)
   }
 };
 
-// GET /mcp - 客户端从服务端获取事件流
 app.get("/mcp", handleSessionRequest);
-
-// DELETE /mcp - 主动关闭会话
 app.delete("/mcp", handleSessionRequest);
 
-// 启动WebSocket服务器和浏览器
-async function startBrowserAndServer() {
-  try {
-    // 启动WebSocket服务器
-    const WS_PORT = 8080;
-    await browserConnector.initialize(WS_PORT);
-    
-    // 启动浏览器并连接到WebSocket服务器
-    await browserAutomation.initialize(WS_PORT);
-    
-    // 启动HTTP服务器
-    const PORT = 3000;
-    app.listen(PORT, () => {
-      debugLog(`🚀 MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
-      debugLog(`💻 浏览器已连接，可以开始测试MCP客户端`);
-    });
-  } catch (error) {
-    debugLog(`❌ 启动服务器时出错:`, error);
-    process.exit(1);
-  }
-}
-
-// 处理进程退出
-process.on('SIGINT', async () => {
-  debugLog('👋 正在关闭服务器...');
-  await browserAutomation.close();
-  browserConnector.close();
-  process.exit(0);
+// 启动HTTP服务器（不再自动启动浏览器和WebSocket，由插件负责）
+const PORT = 3000;
+app.listen(PORT, () => {
+  debugLog(`🚀 MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
+  debugLog(`💻 等待插件连接，AI可通过MCP协议调用工具，插件负责实际页面操作`);
 });
-
-// 启动服务器
-startBrowserAndServer();
