@@ -4,6 +4,12 @@
 const API_BASE_URL = 'http://localhost:3000';
 
 // 会话ID管理
+
+// 服务器事件数据接口
+export interface ServerEventData {
+  type: string;
+  data: any; 
+}
 let currentSessionId: string | null = null;
 
 export const setSessionId = (sessionId: string) => {
@@ -11,6 +17,28 @@ export const setSessionId = (sessionId: string) => {
 };
 
 export const getSessionId = () => currentSessionId;
+
+// 事件回调类型
+export type EventCallback = (data: any) => void; // 回调函数接收解析后的 data
+
+// 存储事件回调
+// 使用 ServerEventData['type'] 作为键，确保类型安全
+const eventCallbacks: Record<string, EventCallback[]> = {};
+
+// 注册事件监听器
+export const addEventListener = (eventType: string, callback: EventCallback) => {
+  if (!eventCallbacks[eventType]) {
+    eventCallbacks[eventType] = [];
+  }
+  eventCallbacks[eventType].push(callback);
+};
+
+// 移除事件监听器
+export const removeEventListener = (eventType: string, callback: EventCallback) => {
+  if (eventCallbacks[eventType]) {
+    eventCallbacks[eventType] = eventCallbacks[eventType].filter(cb => cb !== callback);
+  }
+};
 
 // AI指令处理接口
 export interface AICommandResponse {
@@ -77,14 +105,38 @@ export const initializeMCPSession = async (): Promise<void> => {
     setSessionId(sessionId);
     console.log('MCP session initialized with ID:', sessionId);
 
-    // 建立事件流连接
-    const eventSource = new EventSource(`${API_BASE_URL}/mcp`, {
-      withCredentials: true,
+    // 添加短暂延迟，确保后端有足够时间完成会话初始化
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // 建立事件流连接，将 sessionId 作为查询参数传递
+    const eventSourceUrl = `${API_BASE_URL}/mcp?sessionId=${encodeURIComponent(sessionId)}`;
+    console.log(`Connecting to EventSource: ${eventSourceUrl}`);
+    const eventSource = new EventSource(eventSourceUrl, {
+      // 注意：标准 EventSource 不支持自定义 header，所以我们用 query param
+      // 如果需要 header，需要使用 fetch + ReadableStream 或特定库
+      withCredentials: false, // 修改为false，避免CORS复杂请求问题
     });
+    console.log('EventSource connection established');
 
     eventSource.onmessage = (event) => {
       console.log('Received event:', event.data);
-      // 这里可以添加事件处理逻辑
+      try {
+        // 尝试解析为 ServerEventData 结构
+        const parsedData: ServerEventData = JSON.parse(event.data);
+        // 确保解析后的数据包含 type 字段
+        if (parsedData && typeof parsedData.type === 'string') {
+          const eventType = parsedData.type;
+          const eventPayload = parsedData.data;
+          // 根据事件类型分发给对应的回调
+          if (eventCallbacks[eventType]) {
+            eventCallbacks[eventType].forEach(callback => callback(eventPayload));
+          }
+        } else {
+          console.warn('Received event data without a valid type:', event.data);
+        }
+      } catch (error) {
+        console.error('Error parsing event data:', error, 'Raw data:', event.data);
+      }
     };
 
     eventSource.onerror = (error) => {

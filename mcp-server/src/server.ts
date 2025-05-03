@@ -1,4 +1,5 @@
 import express from "express";
+import cors from 'cors'; // 引入 cors 中间件
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { randomUUID } from "crypto";
@@ -11,6 +12,17 @@ import fetch from 'node-fetch'; // 需要引入 node-fetch 用于后端发送 HT
 
 // 创建 Express 应用
 const app = express();
+
+// 配置 CORS
+const corsOptions = {
+  origin: 'http://localhost:5173', // 允许来自前端的请求
+  methods: ['GET', 'POST', 'OPTIONS'], // 允许的 HTTP 方法
+  allowedHeaders: ['Content-Type', 'Accept', 'Mcp-Session-Id'], // 允许的请求头
+  credentials: true, // 允许携带凭证（例如 cookies）
+  exposedHeaders: ['Mcp-Session-Id'], // 允许前端访问的响应头
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // 存储会话传输实例
@@ -145,18 +157,23 @@ app.post("/mcp", async (req, res) => {
     // 设置会话ID响应头
     res.setHeader("Mcp-Session-Id", newSessionId);
     
-    // 创建传输实例
+    // 1. 创建 MCP Server 实例
+    const server = createServer();
+    debugLog(`🔧 MCP Server 实例已创建 (会话: ${newSessionId})`);
+
+    // 2. 创建传输实例
     transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => newSessionId,
       onsessioninitialized: (id) => {
-        debugLog(`✅ 会话初始化成功: ${id}`);
+        debugLog(`✅ 会话初始化成功回调: ${id}`);
       }
     });
+    debugLog(`🔧 传输实例已创建 (会话: ${newSessionId})`);
 
-    // 存储传输实例
+    // 3. 存储传输实例
     transports[newSessionId] = transport;
     
-    // 设置会话关闭处理
+    // 4. 设置会话关闭处理
     transport.onclose = () => {
       if (transport.sessionId) {
         debugLog(`❌ 会话关闭: ${transport.sessionId}`);
@@ -165,10 +182,24 @@ app.post("/mcp", async (req, res) => {
       }
     };
 
-    // 创建并连接服务器
-    const server = createServer();
-    await server.connect(transport);
-    debugLog(`🔌 服务器已连接到传输层`);
+    // 5. 连接服务器到传输层
+    try {
+      debugLog(`⏳ 尝试连接服务器到传输层 (会话: ${newSessionId})...`);
+      await server.connect(transport);
+      debugLog(`🔌 服务器已成功连接到传输层 (会话: ${newSessionId})`);
+    } catch (connectError) {
+      debugLog(`❌ 连接服务器到传输层时出错 (会话: ${newSessionId}):`, connectError);
+      // 如果连接失败，可能需要清理并返回错误
+      delete transports[newSessionId];
+      return res.status(500).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32001, // Custom error code for connection failure
+          message: "Internal Server Error: Failed to connect server to transport",
+        },
+        id: req.body?.id || null,
+      });
+    }
   } 
   // 处理无效请求
   else {
@@ -184,10 +215,30 @@ app.post("/mcp", async (req, res) => {
   }
 
   try {
-    // 处理请求
-    await transport.handleRequest(req, res, req.body);
+    debugLog(`⏳ 即将处理请求体: ${JSON.stringify(req.body)}`);
+    
+    // 如果是初始化请求，完全手动处理响应
+    if (isInitialize) {
+      // 手动设置响应，确保状态码为200
+      res.status(200);
+      
+      // 不调用transport.handleRequest，而是直接手动处理初始化请求
+      // 这样可以避免响应头被发送两次
+      debugLog(`✅ 初始化请求处理完成，手动发送响应: ${method}`);
+      
+      // 手动发送JSON-RPC成功响应
+      return res.json({
+        jsonrpc: "2.0",
+        result: { capabilities: { /* 服务器能力 */ } },
+        id: req.body?.id || 1
+      });
+    } else {
+      // 非初始化请求正常处理
+      await transport.handleRequest(req, res, req.body);
+      debugLog(`✅ 请求处理完成: ${method}`);
+    }
   } catch (error) {
-    debugLog("Error handling MCP request:", error);
+    debugLog(`❌ 处理 MCP 请求时出错 (${method}):`, error);
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",
@@ -203,32 +254,73 @@ app.post("/mcp", async (req, res) => {
 
 // 处理 GET 和 DELETE 请求的通用函数
 const handleSessionRequest = async (req: express.Request, res: express.Response) => {
-  const sessionId = req.headers["mcp-session-id"] as string;
-  
-  // 验证会话ID
-  if (!sessionId || !transports[sessionId]) {
-    debugLog(`❌ 无效会话请求: sessionId=${sessionId || "无"}`);
+  // 优先从 Header 获取 sessionId，如果不存在（例如 EventSource GET 请求），则从查询参数获取
+  let sessionId = req.headers["mcp-session-id"] as string;
+  if (!sessionId && req.method === 'GET' && req.query.sessionId) {
+    sessionId = req.query.sessionId as string;
+    debugLog(`ℹ️ 从查询参数获取 Session ID: ${sessionId}`);
+  }
+
+  // 第一步：验证会话ID是否存在
+  if (!sessionId) {
+    debugLog(`❌ 无效会话请求: 缺少sessionId`);
     return res.status(400).json({
       jsonrpc: "2.0",
       error: {
         code: -32000,
-        message: "Invalid or missing session ID",
+        message: "Missing session ID",
       },
       id: null,
     });
   }
+
+  // 第二步：验证会话ID是否在transports中存在
+  if (!transports[sessionId]) {
+    debugLog(`❌ 无效会话请求: sessionId=${sessionId} 在transports中不存在`);
+    debugLog(`当前有效的会话IDs: ${Object.keys(transports).join(', ') || '无'}`);
+    
+    // 检查是否是大小写问题 - MCP会话ID通常是UUID，可能存在大小写不一致的情况
+    const lowerCaseSessionId = sessionId.toLowerCase();
+    const matchingSessionId = Object.keys(transports).find(
+      id => id.toLowerCase() === lowerCaseSessionId
+    );
+    
+    if (matchingSessionId) {
+      debugLog(`✅ 找到匹配的会话ID (大小写不敏感): ${matchingSessionId}`);
+      sessionId = matchingSessionId; // 使用找到的匹配ID
+    } else {
+      debugLog(`❌ 即使进行大小写不敏感匹配，也找不到有效的会话ID: ${sessionId}`);
+      // 根据MCP协议规范，如果会话ID无效，应返回404而不是400
+      return res.status(404).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Session not found",
+        },
+        id: null,
+      });
+    }
+  } else {
+    debugLog(`✅ 会话ID直接匹配成功: ${sessionId}`);
+  }
   
   // 验证 Accept 头部 (仅对 GET 请求)
-  if (req.method === "GET" && !req.headers.accept?.includes("text/event-stream")) {
-    debugLog(`❌ GET 请求缺少有效的 Accept 头部: ${req.headers.accept}`);
-    return res.status(406).json({
-      jsonrpc: "2.0",
-      error: {
-        code: -32000,
-        message: "Not Acceptable: Client must accept text/event-stream",
-      },
-      id: null,
-    });
+  if (req.method === "GET") {
+    const acceptHeader = req.headers.accept || "";
+    debugLog(`📝 请求的Accept头部: ${acceptHeader}`);
+    
+    // 根据MCP协议规范，EventSource连接请求的Accept头部必须包含text/event-stream
+    if (!acceptHeader.includes("text/event-stream")) {
+      debugLog(`❌ GET 请求缺少有效的 Accept 头部: ${acceptHeader}`);
+      return res.status(406).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Not Acceptable: Client must accept text/event-stream",
+        },
+        id: null,
+      });
+    }
   }
   
   debugLog(`✅ 会话请求验证通过: ${sessionId}`);
@@ -236,9 +328,23 @@ const handleSessionRequest = async (req: express.Request, res: express.Response)
   
   try {
     const transport = transports[sessionId];
+    // 确保transport存在
+    if (!transport) {
+      debugLog(`❌ 无法找到会话ID对应的transport: ${sessionId}`);
+      return res.status(404).json({
+        jsonrpc: "2.0",
+        error: {
+          code: -32000,
+          message: "Session transport not found",
+        },
+        id: null,
+      });
+    }
+    debugLog(`⏳ 开始处理会话请求: ${req.method} ${req.url}`);
     await transport.handleRequest(req, res);
+    debugLog(`✅ 会话请求处理完成: ${req.method} ${req.url}`);
   } catch (error) {
-    debugLog("Error handling session request:", error);
+    debugLog(`❌ 处理会话请求时出错: ${error}`);
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",

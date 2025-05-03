@@ -1,8 +1,16 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Play, Clock, Settings, Loader2 } from "lucide-react"
 import ThinkingDots from "./components/thinking-dots"
 import EnvConfigModal from "./components/env-config-modal"
 import HistoryModal from "./components/history-modal"
+import { initializeMCPSession, sendAICommand, addEventListener, removeEventListener } from "./service"
+
+// 定义从服务器接收的事件数据类型
+interface ServerEventData {
+  // 根据后端实际发送的数据结构定义，这里先用 unknown 或具体类型
+  // 例如: message?: string; details?: any; code?: number; 
+  [key: string]: unknown; // 允许任意属性，但值为 unknown
+}
 
 
 export default function InBrowserMcp() {
@@ -21,50 +29,80 @@ export default function InBrowserMcp() {
     setHistory((prev) => prev.filter(item => item.id !== id))
   }
 
+  // 初始化MCP会话和事件监听
+  useEffect(() => {
+    initializeMCPSession().catch(error => {
+      console.error("Failed to initialize MCP session:", error);
+      setResult(`错误：无法初始化MCP会话 - ${error.message}`);
+    });
+
+    const handleMessage = (data: ServerEventData) => {
+      console.log("Received message event:", data);
+      // 逐步更新结果，模拟流式输出
+      setResult(prevResult => (prevResult ? prevResult + "\n" : "") + JSON.stringify(data)); 
+      setIsThinking(false); // 收到消息认为思考结束，可以根据需要调整
+    };
+
+    const handleError = (data: ServerEventData) => {
+      console.error("Received error event:", data);
+      setResult(prevResult => (prevResult ? prevResult + "\n" : "") + `错误: ${JSON.stringify(data)}`);
+      setIsThinking(false);
+    };
+
+    // 注册事件监听器
+    addEventListener('message', handleMessage);
+    addEventListener('error', handleError);
+
+    // 清理函数：移除事件监听器
+    return () => {
+      removeEventListener('message', handleMessage);
+      removeEventListener('error', handleError);
+    };
+  }, []); // 空依赖数组确保只在挂载和卸载时运行
+
   // 执行命令
-  const executeCommand = () => {
-    if (!inputValue.trim()) return
+  const executeCommand = async () => {
+    if (!inputValue.trim()) return;
 
-    // 开始思考动画
-    setIsThinking(true)
-    setResult(null)
+    const commandToSend = inputValue;
+    setInputValue(''); // 清空输入框
+    setIsThinking(true);
+    setResult(null); // 清空之前的结果
 
-    // 模拟API调用延迟
-    setTimeout(() => {
-      let response = ""
+    try {
+      // 调用service中的函数发送命令
+      const response = await sendAICommand(commandToSend);
+      console.log('AI Command Response:', response);
+      // 初始响应可能只包含确认信息，实际结果通过SSE推送
+      // setResult(response.message || '命令已发送'); 
+      // 暂时注释掉，因为结果主要通过SSE更新
 
-      // 根据输入的命令返回不同的结果
-      if (inputValue.includes("打开谷歌浏览器")) {
-        response = "已执行：打开谷歌浏览器\n\n✅ 谷歌浏览器已成功启动\n\n您可以继续输入命令控制浏览器行为。"
-      } else if (inputValue.toLowerCase().includes("google") || inputValue.includes("谷歌")) {
-        response =
-          "已执行：打开谷歌网站\n\n✅ 已在浏览器中导航至 https://www.google.com\n\n页面加载完成，可以进行后续操作。"
-      } else if (inputValue.includes("截图")) {
-        response =
-          "已执行：网页截图\n\n✅ 截图已完成\n\n截图已保存至默认下载目录，文件名：screenshot_" +
-          new Date().getTime() +
-          ".png"
-      } else {
-        response = `已尝试执行：${inputValue}\n\n⚠️ 命令已发送，但未能识别具体操作\n\n请尝试更明确的指令，例如"打开网站"、"点击按钮"等。`
-      }
-
-      // 更新结果
-      setResult(response)
-
-      // 添加到历史记录
+      // 添加到历史记录 (可以在收到最终结果时再添加，或者立即添加)
       const newHistoryItem = {
         id: Date.now(),
-        command: inputValue,
+        command: commandToSend,
         timestamp: new Date().toLocaleString(),
-        result: response,
-      }
+        result: "处理中...", // 初始状态，会被SSE更新
+      };
+      setHistory((prev) => [newHistoryItem, ...prev]);
 
-      setHistory((prev) => [newHistoryItem, ...prev])
-
-      // 结束思考动画
-      setIsThinking(false)
-    }, 2000) // 2秒后显示结果
-  }
+    } catch (error: any) {
+      console.error('Error executing command:', error);
+      setResult(`执行命令时出错: ${error.message}`);
+      setIsThinking(false);
+      // 添加错误记录到历史
+      const errorHistoryItem = {
+        id: Date.now(),
+        command: commandToSend,
+        timestamp: new Date().toLocaleString(),
+        result: `错误: ${error.message}`,
+      };
+      setHistory((prev) => [errorHistoryItem, ...prev]);
+    } 
+    // 注意：setIsThinking(false) 的调用移到了事件处理中，或者在超时后设置
+    // 可以加一个超时逻辑，如果在一定时间内没有收到SSE消息，则停止思考动画
+    // setTimeout(() => setIsThinking(false), 10000); // 例如10秒超时
+  };
 
   return (
     <div className="max-w-3xl mx-auto p-4 bg-gradient-to-b from-pink-50 to-purple-50 min-h-screen rounded-lg">
