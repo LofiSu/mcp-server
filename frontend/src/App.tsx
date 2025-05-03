@@ -1,4 +1,3 @@
-
 import { useState } from "react"
 import { Play, Clock, Settings, Loader2 } from "lucide-react"
 import ThinkingDots from "./components/thinking-dots"
@@ -12,7 +11,15 @@ export default function InBrowserMcp() {
   const [inputValue, setInputValue] = useState("")
   const [result, setResult] = useState<string | null>(null)
   const [isThinking, setIsThinking] = useState(false)
-  const [history, setHistory] = useState<Array<{ id: number; command: string; timestamp: string; result: string }>>([])
+  const [history, setHistory] = useState<Array<{ id: number; command: string; timestamp: string; result: string }>>([])  
+
+  const clearHistory = () => {
+    setHistory([])
+  }
+
+  const deleteHistoryItem = (id: number) => {
+    setHistory((prev) => prev.filter(item => item.id !== id))
+  }
 
   // 执行命令
   const executeCommand = () => {
@@ -163,7 +170,14 @@ export default function InBrowserMcp() {
       {showEnvConfig && <EnvConfigModal onClose={() => setShowEnvConfig(false)} />}
 
       {/* History Modal */}
-      {showHistory && <HistoryModal onClose={() => setShowHistory(false)} history={history} />}
+      {showHistory && (
+        <HistoryModal
+          onClose={() => setShowHistory(false)}
+          history={history}
+          onClearHistory={clearHistory}
+          onDeleteHistoryItem={deleteHistoryItem}
+        />
+      )}
     </div>
   )
 }
