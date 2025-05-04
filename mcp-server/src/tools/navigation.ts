@@ -28,8 +28,8 @@ export const navigate: Tool = {
       
       // 发送导航消息到插件
       debugLog("请求插件导航到: " + validatedParams.url);
-      // 注意：这里假设插件 API 需要一个 'navigate' 类型的消息
-      await context.sendSocketMessage("navigate", { url: validatedParams.url });
+      // 使用新的浏览器动作发送方法
+      await context.sendBrowserAction("navigate", { url: validatedParams.url });
 
       // 捕获快照 (通过插件)
       debugLog("请求插件捕获页面快照");
@@ -59,8 +59,8 @@ export const goBack: Tool = {
     try {
       // 发送后退消息到插件
       debugLog("请求插件执行后退操作");
-      // 注意：这里假设插件 API 需要一个 'goBack' 类型的消息
-      await context.sendSocketMessage("goBack", {});
+      // 使用新的浏览器动作发送方法
+      await context.sendBrowserAction("goBack", {});
 
       // sendSocketMessage 包含等待响应或超时的逻辑，此处不再需要额外等待
 
@@ -81,8 +81,8 @@ export const goForward: Tool = {
     try {
       // 发送前进消息到插件
       debugLog("请求插件执行前进操作");
-      // 注意：这里假设插件 API 需要一个 'goForward' 类型的消息
-      await context.sendSocketMessage("goForward", {});
+      // 使用新的浏览器动作发送方法
+      await context.sendBrowserAction("goForward", {});
 
       // sendSocketMessage 包含等待响应或超时的逻辑，此处不再需要额外等待
 
@@ -105,8 +105,8 @@ export const pressKey: Tool = {
       
       // 发送按键消息到插件
       debugLog("请求插件模拟按键: " + validatedParams.key);
-      // 注意：这里假设插件 API 需要一个 'pressKey' 类型的消息
-      await context.sendSocketMessage("pressKey", { key: validatedParams.key });
+      // 使用新的浏览器动作发送方法
+      await context.sendBrowserAction("pressKey", { key: validatedParams.key });
 
       // sendSocketMessage 包含等待响应或超时的逻辑，此处不再需要额外等待
 

@@ -6,7 +6,7 @@ export async function captureAriaSnapshot(
   context: Context,
   status: string = "",
 ): Promise<ToolResult> {
-  // 检查插件连接状态 (由 mcpContext 内部管理)
+  // 检查浏览器 API 是否可用 (由 mcpContext 内部管理)
   if (!context.isConnected()) {
     return {
       content: [
@@ -19,27 +19,23 @@ export async function captureAriaSnapshot(
   }
 
   try {
-    // 从插件获取 URL, Title 和 Snapshot
-    // 注意：这里假设插件 API 需要 'getUrl', 'getTitle', 'snapshot' 类型的消息
-    const url = await context.sendSocketMessage("getUrl", undefined);
-    const title = await context.sendSocketMessage("getTitle", undefined);
-    const snapshot = await context.sendSocketMessage("snapshot", {});
+    // 从 context 获取 URL 和 Title
+    const { url, title } = await context.getBrowserState();
 
-    // 检查返回值是否有效 (插件可能返回 null 或 undefined)
-    if (url === null || url === undefined || title === null || title === undefined || snapshot === null || snapshot === undefined) {
-        let missingInfo = [];
-        if (url === null || url === undefined) missingInfo.push("URL");
-        if (title === null || title === undefined) missingInfo.push("Title");
-        if (snapshot === null || snapshot === undefined) missingInfo.push("Snapshot");
-        
-        return {
-            content: [
-                {
-                    type: "text",
-                    text: `无法从插件获取完整的页面信息 (${missingInfo.join(', ')} missing). 插件可能未正确响应或页面状态异常。`,
-                },
-            ],
-        };
+    // 通过浏览器动作获取快照
+    // 注意：这里假设插件 API 需要 'snapshot' 类型的消息
+    const snapshot = await context.sendBrowserAction("snapshot", {});
+
+    // 检查快照返回值是否有效
+    if (snapshot === null || snapshot === undefined) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `无法从插件获取页面快照。插件可能未正确响应或页面状态异常。`,
+          },
+        ],
+      };
     }
 
     return {

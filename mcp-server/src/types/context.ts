@@ -1,8 +1,8 @@
 export interface Context {
-  socket?: any;
-  sendSocketMessage(type: string, payload: any): Promise<any>;
+  // socket?: any; // Removed, no longer used
+  sendBrowserAction(type: string, payload: any, target?: 'content' | 'background'): Promise<any>; // Updated method
   wait(ms: number): Promise<void>;
-  getBrowserState(): Promise<any>;
-  executeBrowserAction(action: string, params: any): Promise<any>;
+  getBrowserState(): Promise<{ connected: boolean; url?: string; title?: string }>; // More specific return type
+  // executeBrowserAction(action: string, params: any): Promise<any>; // Removed, use sendBrowserAction directly
   isConnected(): boolean; 
 }

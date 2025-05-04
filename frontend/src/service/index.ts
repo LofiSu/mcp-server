@@ -119,21 +119,40 @@ export const initializeMCPSession = async (): Promise<void> => {
 
     // ! 客户端需要回传 notification 表示会话已初始化
     // ? 参见：https://modelcontextprotocol.io/specification/2025-03-26/basic/lifecycle#lifecycle-phases
-    // todo: 此处需要补充错误处理或日志上报
-    const notificationResponse = await fetch(
-      `${API_BASE_URL}/mcp?sessionId=${encodeURIComponent(sessionId)}`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json, text/event-stream",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "notifications/initialized",
-        }),
+    // 发送 initialized 通知，并添加错误处理
+    try {
+      const notificationResponse = await fetch(
+        `${API_BASE_URL}/mcp?sessionId=${encodeURIComponent(sessionId)}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json, text/event-stream",
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            method: "notifications/initialized",
+          }),
+        }
+      );
+
+      if (!notificationResponse.ok) {
+        // 如果响应状态不为 OK，记录错误信息
+        const errorText = await notificationResponse.text(); // 尝试获取文本以了解更多信息
+        console.error(
+          `Failed to send initialized notification. Status: ${notificationResponse.status}, Response: ${errorText}`
+        );
+        // 可以选择抛出错误或仅记录
+        // throw new Error(`Failed to send initialized notification. Status: ${notificationResponse.status}`);
+      } else {
+        console.log('Successfully sent initialized notification.');
       }
-    );
+    } catch (error) {
+      // 处理 fetch 本身的网络错误等
+      console.error('Error sending initialized notification:', error);
+      // 可以选择重新抛出错误或进行其他处理
+      // throw error;
+    }
     // 建立事件流连接，将 sessionId 作为查询参数传递
     const eventSourceUrl = `${API_BASE_URL}/mcp?sessionId=${encodeURIComponent(sessionId)}`;
     console.log(`Connecting to EventSource: ${eventSourceUrl}`);
