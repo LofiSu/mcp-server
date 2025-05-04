@@ -1,46 +1,55 @@
 // background.js
 
-console.log("InBrowser MCP Background Script Loaded");
-
 const WS_URL = "ws://localhost:8081"; // 后端 WebSocket 服务器地址
 let ws = null;
 let reconnectInterval = 5000; // 重连间隔 5 秒
 
 function connectWebSocket() {
-  console.log(`🔌 尝试连接 WebSocket 到 ${WS_URL}...`);
+// 检查是否已有连接或正在连接
+if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+    return; 
+  }
   ws = new WebSocket(WS_URL);
 
   ws.onopen = () => {
-    console.log(`✅ WebSocket 连接成功到 ${WS_URL}`);
-    // 连接成功后可以发送一个标识信息
-    // ws.send(JSON.stringify({ type: 'extension_connected', version: chrome.runtime.getManifest().version }));
+    console.log(`✅ WebSocket 连接成功到 ${WS_URL}. ReadyState: ${ws.readyState}`);
+    // 向服务器发送一个测试消息
+  ws.send(JSON.stringify({type: 'test', payload: {message: 'Hello from extension'}}));
   };
-
+  console.log('⏳ 即将设置 onmessage 监听器...');
   ws.onmessage = (event) => {
-    console.log(`📩 收到 WebSocket 消息: ${event.data}`);
+    console.log(`📩 ===`);
+    console.log(`📩 [RAW] 收到 WebSocket 消息: ${event.data}`); 
     try {
       const message = JSON.parse(event.data);
+      console.log('✅ WebSocket 消息解析成功:', message); 
       handleServerCommand(message.type, message.payload);
     } catch (error) {
-      console.error('❌ 解析 WebSocket 消息失败:', error);
+      console.error('❌ 解析 WebSocket 消息失败:', error, '原始消息:', event.data);
     }
   };
 
   ws.onerror = (error) => {
     console.error('❌ WebSocket 错误:', error);
+    console.error(`❌ WebSocket 错误详情: Type=${error.type}`);
     // 错误发生时，onclose 也会被调用，在那里处理重连
   };
 
   ws.onclose = (event) => {
-    console.log(`🔌 WebSocket 连接已断开 (Code: ${event.code}, Reason: ${event.reason}). ${reconnectInterval / 1000}秒后尝试重连...`);
+    console.log(`🔌 WebSocket 连接已断开. Code: ${event.code}, Reason: '${event.reason}', WasClean: ${event.wasClean}. ReadyState before close: ${ws?.readyState}`);
     ws = null;
+    console.log(`🔌 ${reconnectInterval / 1000}秒后尝试重连...`);
     // 尝试重新连接
     setTimeout(connectWebSocket, reconnectInterval);
   };
 }
 
+// 立即开始连接
+connectWebSocket();
+
 // 处理来自服务器的指令
 async function handleServerCommand(type, payload) {
+  console.log(`🏁 [handleServerCommand] 开始处理指令: type=${type}`); // Log entry into the function
   console.log(`⚙️ 处理服务器指令: type=${type}, payload=`, payload);
   switch (type) {
     case 'navigate':
@@ -169,16 +178,8 @@ async function handleServerCommand(type, payload) {
          console.error('❌ hover_element 指令缺少 selector');
        }
        break;
-    case 'screenshot':
-      await takeScreenshot(payload?.format || 'png', payload?.quality);
-      break;
-    case 'close_tab':
-      if (payload && payload.tabId) {
-        await closeTab(payload.tabId);
-      } else {
-        console.error('❌ close_tab 指令缺少 tabId');
-      }
-      break;
+    // Removed duplicate 'screenshot' case
+    // Removed duplicate 'close_tab' case
     case 'create_tab':
       await createTab(payload?.url, payload?.active);
       break;
@@ -1267,10 +1268,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Example: Listen for commands defined in manifest.json (if any)
-chrome.commands.onCommand.addListener((command) => {
-  console.log(`Command received: ${command}`);
-  // Handle commands like opening popup or triggering actions
-});
+// 由于 manifest.json 中未定义 commands，暂时注释掉此监听器以避免错误
+// chrome.commands.onCommand.addListener((command) => {
+//   console.log(`Command received: ${command}`);
+//   // Handle commands like opening popup or triggering actions
+// });
 
 // Example: Handling installation or update events
 chrome.runtime.onInstalled.addListener((details) => {
