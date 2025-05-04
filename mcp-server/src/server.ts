@@ -25,6 +25,15 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
+// 中间件：从查询参数中提取自定义头字段
+app.use((req, res, next) => {
+  const sessionId = req.query.sessionId as string;
+  if (sessionId) {
+    req.headers["mcp-session-id"] = sessionId; // 将查询参数中的 sessionId 设置为请求头
+  }
+  next();
+});
+
 // 存储会话传输实例
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 
@@ -219,19 +228,21 @@ app.post("/mcp", async (req, res) => {
     
     // 如果是初始化请求，完全手动处理响应
     if (isInitialize) {
-      // 手动设置响应，确保状态码为200
-      res.status(200);
+      // ! 似乎一定得调用 sdk 的这个方法才能完成初始化请求
+      await transport.handleRequest(req, res, req.body);
+      // // 手动设置响应，确保状态码为200
+      // res.status(200);
       
-      // 不调用transport.handleRequest，而是直接手动处理初始化请求
-      // 这样可以避免响应头被发送两次
-      debugLog(`✅ 初始化请求处理完成，手动发送响应: ${method}`);
+      // // 不调用transport.handleRequest，而是直接手动处理初始化请求
+      // // 这样可以避免响应头被发送两次
+      // debugLog(`✅ 初始化请求处理完成，手动发送响应: ${method}`);
       
-      // 手动发送JSON-RPC成功响应
-      return res.json({
-        jsonrpc: "2.0",
-        result: { capabilities: { /* 服务器能力 */ } },
-        id: req.body?.id || 1
-      });
+      // // 手动发送JSON-RPC成功响应
+      // return res.json({
+      //   jsonrpc: "2.0",
+      //   result: { capabilities: { /* 服务器能力 */ } },
+      //   id: req.body?.id || 1
+      // });
     } else {
       // 非初始化请求正常处理
       await transport.handleRequest(req, res, req.body);

@@ -8,7 +8,7 @@ const API_BASE_URL = 'http://localhost:3000';
 // 服务器事件数据接口
 export interface ServerEventData {
   type: string;
-  data: any; 
+  data: any;
 }
 let currentSessionId: string | null = null;
 
@@ -86,9 +86,18 @@ export const initializeMCPSession = async (): Promise<void> => {
         'Accept': 'application/json, text/event-stream',
       },
       body: JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'initialize',
-        params: {},
+        jsonrpc: "2.0",
+        method: "initialize",
+        // ! 初始化时 params 不能为空
+        // ? 参见：https://github.com/modelcontextprotocol/typescript-sdk/issues/412
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: {
+            name: "ExampleClient",
+            version: "1.0.0",
+          },
+        },
         id: 1,
       }),
     });
@@ -106,8 +115,25 @@ export const initializeMCPSession = async (): Promise<void> => {
     console.log('MCP session initialized with ID:', sessionId);
 
     // 添加短暂延迟，确保后端有足够时间完成会话初始化
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // ! 客户端需要回传 notification 表示会话已初始化
+    // ? 参见：https://modelcontextprotocol.io/specification/2025-03-26/basic/lifecycle#lifecycle-phases
+    // todo: 此处需要补充错误处理或日志上报
+    const notificationResponse = await fetch(
+      `${API_BASE_URL}/mcp?sessionId=${encodeURIComponent(sessionId)}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+        }),
+      }
+    );
     // 建立事件流连接，将 sessionId 作为查询参数传递
     const eventSourceUrl = `${API_BASE_URL}/mcp?sessionId=${encodeURIComponent(sessionId)}`;
     console.log(`Connecting to EventSource: ${eventSourceUrl}`);
