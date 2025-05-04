@@ -1,37 +1,34 @@
 import { 
-  GetConsoleLogsTool, 
   ScreenshotTool,
+  WaitTool, // 添加 WaitTool
+  ClearBrowsingDataTool, // 添加 ClearBrowsingDataTool
   Tool,
 } from "../types/tools.js";
 import { Context } from "../types/context.js";
 import { 
   createToolSchema, 
   createTextResponse, 
-  handleToolError
+  handleToolError,
+  validateToolParams, // 添加 validateToolParams
+  createSnapshotResponse // 添加 createSnapshotResponse
 } from "./helpers.js";
+import { debugLog } from "../utils/log.js"; // 添加 debugLog
+import { captureAriaSnapshot } from "../utils/aria-snapshot.js"; // 添加 captureAriaSnapshot
 
-// 获取控制台日志工具
-export const getConsoleLogs: Tool = {
-  schema: createToolSchema(GetConsoleLogsTool),
+// 等待工具 (后端实现)
+export const wait: Tool = {
+  schema: createToolSchema(WaitTool),
   handle: async (context: Context, params?: Record<string, any>) => {
     try {
-      // 使用参数或默认值
-      const options = params || {};
-      // 使用新的浏览器动作发送方法
-      const consoleLogs = await context.sendBrowserAction(
-        "getConsoleLogs",
-        options,
-      );
-      interface ConsoleLog {
-        level: string;
-        message: string;
-        timestamp: number;
-      }
+      const validatedParams = validateToolParams(WaitTool.shape.argsSchema, params);
+      const time = validatedParams.time;
+      debugLog(`后端等待 ${time}ms`); // 添加日志
+      // 等待指定时间
+      await new Promise(resolve => setTimeout(resolve, time));
       
-      const text: string = (consoleLogs as unknown as ConsoleLog[])
-        .map((log) => JSON.stringify(log))
-        .join("\n");
-      return createTextResponse(text);
+      // 等待后通常需要获取最新状态，这里捕获快照
+      const snapshot = await captureAriaSnapshot(context);
+      return createSnapshotResponse(`等待了 ${time}ms`, snapshot.content);
     } catch (error) {
       return handleToolError(error);
     }
@@ -41,21 +38,19 @@ export const getConsoleLogs: Tool = {
 // 截图工具
 export const screenshot: Tool = {
   schema: createToolSchema(ScreenshotTool),
-  handle: async (context: Context, params?: Record<string, any>) => {
+  handle: async (context: Context) => { // 移除 params，因为 schema 中没有参数
     try {
-      // 使用参数或默认值
-      const options = params || {};
-      // 使用新的浏览器动作发送方法
-      const screenshot = await context.sendBrowserAction(
+      debugLog("请求插件截取当前可见标签页"); // 添加日志
+      const screenshotData = await context.sendBrowserAction(
         "screenshot",
-        options,
+        {}, // 无参数
       );
       return {
         content: [
           {
             type: "image",
-            data: screenshot as string,
-            mimeType: "image/png",
+            data: screenshotData as string, // 插件直接返回 base64 数据
+            mimeType: "image/png", // 假设插件总是返回 PNG
           },
         ],
       };
@@ -64,3 +59,20 @@ export const screenshot: Tool = {
     }
   },
 };
+
+// 清除浏览数据工具
+export const clearBrowsingData: Tool = {
+  schema: createToolSchema(ClearBrowsingDataTool),
+  handle: async (context: Context, params?: Record<string, any>) => {
+    try {
+      const validatedParams = validateToolParams(ClearBrowsingDataTool.shape.argsSchema, params);
+      debugLog(`请求插件清除浏览数据: ${JSON.stringify(validatedParams)}`); // 添加日志
+      await context.sendBrowserAction("clearBrowsingData", validatedParams);
+      return createTextResponse(`浏览数据已清除: ${validatedParams.dataTypes.join(', ')}`);
+    } catch (error) {
+      return handleToolError(error);
+    }
+  },
+};
+
+// 注意：getConsoleLogs 工具已被移除

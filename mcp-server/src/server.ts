@@ -123,24 +123,57 @@ function createServer() {
   const allTools = [
     // 导航类
     tools.navigate,
-    tools.goBack,
-    tools.goForward,
-    tools.wait,
-    tools.pressKey,
+    tools.refreshPage, 
     
     // 交互类
     tools.click,
-    tools.drag,
     tools.hover,
     tools.type,
-    tools.selectOption,
+    tools.scroll, // 添加 scroll
+
+    // 页面内容类
+    tools.getContent,
+    tools.getAttribute,
+    tools.getCurrentState,
+
+    // 高级操作类
+    tools.executeScript,
+
+    // 标签页管理类
+    tools.getAllTabs,
+    tools.createTab,
+    tools.closeTab,
+    tools.focusTab,
+
+    // 窗口管理类
+    tools.getAllWindows,
+    tools.createWindow,
+    tools.closeWindow,
+    tools.focusWindow,
+
+    // 存储管理类
+    tools.getCookies,
+    tools.setCookie,
+    tools.deleteCookie,
+    tools.getStorageItem,
+    tools.setStorageItem,
+    tools.deleteStorageItem,
+
+    // 历史与书签类
+    tools.searchHistory,
+    tools.deleteHistoryUrl,
+    tools.createBookmark,
+    tools.searchBookmarks,
     
     // 快照类
     tools.snapshot,
     
     // 实用工具类
-    tools.getConsoleLogs,
-    tools.screenshot
+    tools.wait, // wait 移到实用工具类
+    tools.screenshot,
+    tools.clearBrowsingData // 添加 clearBrowsingData
+
+    // 移除的工具: goBack, goForward, pressKey, drag, selectOption, getConsoleLogs
   ];
 
   // 批量注册所有工具
