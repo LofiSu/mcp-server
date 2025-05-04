@@ -7,8 +7,9 @@ import * as tools from "./tools/index.js";
 import { debugLog } from "./utils/log.js";
 import { Context } from "./types/context.js";
 import { Tool } from "./types/tools.js";
-import { mcpContext } from "./utils/mcp-context.js";
-import fetch from 'node-fetch'; 
+// import { mcpContext } from "./utils/mcp-context.js"; // mcpContext 不再适用，直接在 server 中处理 WebSocket
+import fetch from 'node-fetch';
+import { WebSocketServer, WebSocket } from 'ws'; // 引入 WebSocket 
 
 // 创建 Express 应用
 const app = express();
@@ -36,6 +37,10 @@ app.use((req, res, next) => {
 
 // 存储会话传输实例
 const transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
+
+// 存储来自插件 background.js 的 WebSocket 连接
+let pluginWebSocket: WebSocket | null = null;
+const WS_PORT = 8081; // WebSocket 服务器端口
 
 /**
  * 验证请求头中的 Accept 头部是否符合 MCP 协议要求
@@ -78,21 +83,40 @@ function createServer() {
   // 创建 context 对象
   // context 现在依赖 mcpContext 通过浏览器扩展 API 与插件通信
   const context = {
-    async sendBrowserAction(type: string, payload: any) {
-      // 依赖 mcpContext 实现与插件的通信
-      return mcpContext.sendBrowserAction(type, payload);
+    async sendBrowserAction(type: string, payload: any): Promise<any> {
+      // 通过 WebSocket 将指令发送给插件
+      if (pluginWebSocket && pluginWebSocket.readyState === WebSocket.OPEN) {
+        return new Promise((resolve, reject) => {
+          const message = JSON.stringify({ type, payload });
+          debugLog(`🔌 发送 WebSocket 指令: ${message}`);
+          pluginWebSocket?.send(message, (err) => {
+            if (err) {
+              debugLog(`❌ WebSocket 发送错误:`, err);
+              reject(err);
+            } else {
+              // 简单实现：假设发送成功即完成，不等待插件响应
+              // 如果需要等待插件响应，需要更复杂的请求/响应机制
+              resolve({ success: true });
+            }
+          });
+        });
+      } else {
+        debugLog('❌ WebSocket 连接不可用，无法发送指令');
+        return Promise.reject(new Error('WebSocket connection to extension is not available.'));
+      }
     },
     async wait(ms: number) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     },
-    async getBrowserState() {
-      // 依赖 mcpContext 实现从插件获取状态
-      return mcpContext.getBrowserState();
+    async getBrowserState(): Promise<any> {
+      // TODO: 实现通过 WebSocket 从插件请求状态
+      debugLog('⚠️ getBrowserState via WebSocket not implemented yet.');
+      return Promise.reject(new Error('getBrowserState via WebSocket not implemented yet.'));
     },
     // executeBrowserAction 方法已移除，直接使用 sendBrowserAction
     isConnected(): boolean {
-      // 依赖 mcpContext 获取插件连接状态
-      return mcpContext.isConnected();
+      // 检查 WebSocket 连接状态
+      return pluginWebSocket !== null && pluginWebSocket.readyState === WebSocket.OPEN;
     },
   } as unknown as Context;
 
@@ -491,17 +515,63 @@ app.post('/api/ai-command', async (req, res) => {
   }
 });
 
-// 启动HTTP服务器（不再自动启动浏览器和WebSocket，由插件负责连接）
+// 启动HTTP服务器
 const PORT = 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   debugLog(`🚀 MCP Stateless Streamable HTTP Server listening on port ${PORT}`);
-  // debugLog(`🔗 API Endpoint for AI commands available at POST /api/ai-command`);
-  // debugLog(`🔌 等待浏览器插件连接 WebSocket at ws://localhost:8081 ...`);
+  debugLog(`🔗 API Endpoint for AI commands available at POST /api/ai-command`);
+  debugLog(`🔌 WebSocket Server listening on port ${WS_PORT}, waiting for extension connection...`);
+});
+
+// 创建 WebSocket 服务器
+const wss = new WebSocketServer({ port: WS_PORT });
+
+wss.on('connection', (ws) => {
+  debugLog('🔌 浏览器插件已连接 WebSocket');
+
+  // 假设只有一个插件实例连接
+  if (pluginWebSocket && pluginWebSocket.readyState === WebSocket.OPEN) {
+    debugLog('⚠️ 检测到新的插件连接，关闭旧连接');
+    pluginWebSocket.terminate(); // 关闭旧连接
+  }
+  pluginWebSocket = ws;
+
+  ws.on('message', (message) => {
+    // 处理来自插件的消息（如果需要）
+    debugLog(`📩收到来自插件的消息: ${message}`);
+    // 可以在这里处理插件的状态更新或操作结果
+  });
+
+  ws.on('close', () => {
+    debugLog('🔌 浏览器插件 WebSocket 连接已断开');
+    if (pluginWebSocket === ws) {
+      pluginWebSocket = null;
+    }
+  });
+
+  ws.on('error', (error) => {
+    debugLog('❌ 浏览器插件 WebSocket 连接出错:', error);
+    if (pluginWebSocket === ws) {
+      pluginWebSocket = null;
+    }
+  });
+
+  // 可以选择在连接时发送一个确认消息
+  // ws.send(JSON.stringify({ type: 'server_connected' }));
+});
+
+wss.on('error', (error) => {
+  debugLog('❌ WebSocket Server 发生错误:', error);
 });
 
 // 移除进程退出时关闭浏览器的逻辑
 process.on('SIGINT', async () => {
   debugLog('👋 正在关闭服务器...');
-  // 不再需要关闭 browserAutomation 和 browserConnector
-  process.exit(0);
+  wss.close(() => {
+    debugLog('🔌 WebSocket Server 已关闭');
+  });
+  server.close(() => {
+    debugLog('🚀 HTTP Server 已关闭');
+    process.exit(0);
+  });
 });
