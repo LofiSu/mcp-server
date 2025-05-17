@@ -13,16 +13,16 @@ The project consists of three main parts:
 ## Architecture
 
 ```
-+-----------------+      +-----------------+      +---------------------+
++-----------------+      +------------------+      +---------------------+
 | Frontend (React)| <--> | MCP Server (Node)| <--> | Browser Extension   |
 | (localhost:5173)|      | (localhost:3000) |      | (via WebSocket 8081)|
-+-----------------+      +-----------------+      +---------------------+
++-----------------+      +------------------+      +---------------------+
        |                      ^
-       | User Interaction       | AI Model Interaction (Conceptual)
+       | User Interaction     | AI Model Interaction (Conceptual)
        v                      |
-+-----------------+      +-----------------+
-| User's Browser  |      | AI Model        |
-+-----------------+      +-----------------+
++-----------------+      +------------------+
+| User's Browser  |      | AI Model         |
++-----------------+      +------------------+
 ```
 
 *   The **Frontend** sends user commands (or AI instructions) to the **MCP Server**.
